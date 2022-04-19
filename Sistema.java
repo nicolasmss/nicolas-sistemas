@@ -355,11 +355,21 @@ public class Sistema {
 				}
 			}
 
-            public void carga2(Word[] p, Word[] m, String nomeProg) {    // significa ler "p" de memoria secundaria e colocar na principal "m"
+            public void carga2(Word[] p, Word[] m, String nomeProg) { //carga com esquema de paginas
                 GerenciadorMemoria gc = new GerenciadorMemoria();
                 int[] paginas = gc.ondeProg(nomeProg);
+                int cont = 0;
                 for (int i = 0;i< paginas.length;i++){
-                    
+                    for(int j=paginas[i]*gc.tamFrame; j<(paginas[i]+1)*gc.tamFrame; j++){
+                        if(cont>=p.length){
+                            break;
+                        }
+                        m[j].opc = p[cont].opc;
+                        m[j].r1 = p[cont].r1;
+                        m[j].r2 = p[cont].r2;
+                        m[j].p = p[cont].p;
+                        cont++;
+                    }
                 }
 
 			    for (int i = 0; i < p.length; i++) {
