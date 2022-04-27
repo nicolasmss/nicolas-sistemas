@@ -355,8 +355,8 @@ public class Sistema {
 				}
 			}
 
-            public void carga2(Word[] p, Word[] m, String nomeProg) { //carga com esquema de paginas
-                GerenciadorMemoria gc = new GerenciadorMemoria();
+            public void carga2(Word[] p, Word[] m, String nomeProg) { //viajei
+                GerenciadorMemoria gc = new GerenciadorMemoria(m);
                 int[] paginas = gc.ondeProg(nomeProg);
                 int cont = 0;
                 for (int i = 0;i< paginas.length;i++){
@@ -481,16 +481,27 @@ public class Sistema {
         public int tamPag = 16;
         public int tamFrame = tamPag;
         public int nroFrames = vm.tamMem/tamPag;
-        public boolean[] frameLivre = new boolean[nroFrames];//meio inutil
+        public int tamMemoria;
+        public Word[] mem;
+        public boolean[] frameLivre = new boolean[nroFrames];
         public int framesLivre = nroFrames;
-        public String[] frames = new String[nroFrames];
+        public String[] frames = new String[nroFrames];//fiz merda
+        public int[] framesUsados;
         public int qtdProg = 0;
 
+        public GerenciadorMemoria(Word[] mem){
+            this.mem = mem;
+            tamMemoria = mem.length;
+            Arrays.fill(frameLivre, true);
+        }
 
 
-        public boolean aloca(int nroPalavras, Word[] prog, String nomeProg ){
+
+        public int[] aloca(int nroPalavras, Word[] prog){
+            framesUsados = new int[nroFrames];
             if (framesLivre*tamFrame<nroPalavras){//programa muito grande pra quantidade livre no momento
-                return false;
+                framesUsados[0] = -1;
+                return framesUsados;
             }
             int contProg = 0;
             framesLivre = framesLivre - nroPalavras;
@@ -500,7 +511,8 @@ public class Sistema {
                     break;
                 }
                 if(frames[i]==null){
-                    frames[i] = nomeProg;
+                    framesUsados[contadorPalavra] =i;
+                    //frames[i] = nomeProg;
                     contadorPalavra++;
 					for(int j=tamFrame*i;j<tamFrame*(i+1);j++){
 						if (contProg>=prog.length){
@@ -512,7 +524,7 @@ public class Sistema {
                 }
             }
             qtdProg++;
-            return true;
+            return framesUsados;
         }
         // retorna true se consegue alocar ou falso caso negativo
         // cada posição i do vetor de saída “tabelaPaginas” informa em que frame a página i deve ser hospedada
