@@ -423,6 +423,53 @@ public class Sistema {
         }
     }
 
+    public void cria(Word[] programa){
+        if (!gerenciadorProcesso.criaProcesso(programa)){
+            System.out.println("erro ao criar processo");
+        }
+        System.out.println("---------------------------------- programa carregado ");
+        GerenciadorProcesso.PCB pcb = gerenciadorProcesso.listaProcesso.get(gerenciadorProcesso.listaProcesso.size()-1);
+
+        System.out.println("id do programa: "+pcb.id);
+        System.out.println("paginas alocadas pelo programa: "+pcb.paginasString()+"\n");
+    }
+
+    public void executa(int id){
+        resetaReg();
+        tipoInterrupcao=-1;
+        vm.cpu.tabAtual = gerenciadorProcesso.findPCBById(id).paginasDoProcesso;
+        System.out.println("processo id = "+ id +" executando");
+        monitor.executa();
+        System.out.println("---------------------------------- programa executado\n");
+    }
+
+    public void dump(int id){
+        GerenciadorProcesso.PCB pcb = gerenciadorProcesso.findPCBById(id);
+        if (pcb==null){
+            System.out.println("não pode usar o dump\nprocesso vazio ou não encontrado\n");
+        }else{
+            System.out.println("processo id = "+id);
+            for (int i = 0;i<pcb.paginasDoProcesso.length;i++){
+                monitor.dump(vm.m,pcb.paginasDoProcesso[i]*gerenciadorMemoria.tamFrame,(pcb.paginasDoProcesso[i]+1)* gerenciadorMemoria.tamFrame);
+            }
+            System.out.println();
+        }
+    }
+
+    public void dumpm(int inicio, int fim){
+        System.out.println("dump de "+inicio+" até "+fim);
+        monitor.dump(vm.m,inicio,fim);
+        System.out.println();
+    }
+
+    public void desaloca(int id){
+        if (gerenciadorProcesso.desalocaProcesso(id)){
+            System.out.println("processo desalocado id = "+id+"\n");
+        }else{
+            System.out.println("erro ao desalocar\n");
+        }
+    }
+
     public void resetaReg(){
         Arrays.fill(vm.cpu.reg, 0);
     }
@@ -608,7 +655,7 @@ Retorna true
          */
         public boolean criaProcesso(Word[] prog){
             ArrayList<Integer> framesAlocados = gm.aloca(prog.length,prog);
-            if (framesAlocados.get(0)==-1){
+            if (!gm.valida){
                 return false;
             }
             int tamProg = (prog.length/gm.tamFrame)+1;
@@ -628,6 +675,16 @@ Retorna true
             return null;
         }
 
+        public boolean desalocaProcesso(int id){
+            PCB pcb = findPCBById(id);
+            if (pcb==null){
+                return false;
+            }
+            gm.desaloca(pcb.paginasDoProcesso);
+            listaProcesso.remove(pcb);
+            return true;
+        }
+
         public class PCB{
             public int id;
             public int[] paginasDoProcesso;
@@ -635,6 +692,14 @@ Retorna true
             public PCB(int id, int[] paginasDoProcesso){
                 this.id = id;
                 this.paginasDoProcesso = paginasDoProcesso;
+            }
+
+            public String paginasString(){
+                String lol ="";
+                for (int i =0;i<paginasDoProcesso.length;i++){
+                    lol = lol + paginasDoProcesso[i]+", ";
+                }
+                return lol;
             }
 
             public int tradutor(int endereco){
@@ -674,9 +739,21 @@ Retorna true
 
         //fase4 gerente de memoria
         //s.roda2(progs.PA);
-        s.roda2(progs.PB);
+        //s.roda2(progs.PB);
         //s.roda2(progs.PC);
-        s.roda2(progs.testeTRAP_IN);
+        //s.roda2(progs.testeTRAP_IN);
+
+        //fase5 gerente de processo
+        s.cria(progs.PA);
+        s.executa(0);
+        s.cria(progs.PB);
+        s.desaloca(0);
+        s.cria(progs.PC);
+        s.executa(2);
+        s.executa(1);
+        s.dump(2);
+        s.dump(1);
+        s.dumpm(0,200);
 
 
 
