@@ -46,6 +46,8 @@ public class Sistema {
         //private int tipoInterrupcao=-1; //0-endereco invalido | 1-instrucao invalida | 2-overflow | 3-final de programa
         //int numero;
         public int[] tabAtual;      //frames do processo que esta executando
+        public int cont = 0;
+        public GerenciadorProcesso.PCB processo;
 
 
 
@@ -56,8 +58,9 @@ public class Sistema {
 			reg = new int[10]; 		// aloca o espaço dos registradores
 		}
 
-		public void setContext(int _pc) {  // no futuro esta funcao vai ter que ser 
-			pc = _pc;                                              // limite e pc (deve ser zero nesta versao)
+		public void setContext(int _pc, int[] _reg) {       // no futuro esta funcao vai ter que ser
+			pc = _pc;
+			reg = _reg;
 		}
 	
 		private void dump(Word w) {
@@ -80,9 +83,16 @@ public class Sistema {
 			int numero;
 		    while (true) { 			// ciclo de instrucoes. acaba cfe instrucao, veja cada caso.
 				// FETCH
-					ir = m[gerenciadorMemoria.tradutor(pc,tabAtual)]; 	// busca posicao da memoria apontada por pc, guarda em ir
-					//if debug
-					    showState();
+                if (cont==delta){
+                    cont=0;
+                    processo.atualizaPc(pc);
+                    processo.atualizaRegistradores(reg);
+                    filaReady.add(processo.id);
+                    break;
+                }
+                cont++;
+                ir = m[gerenciadorMemoria.tradutor(pc,tabAtual)]; 	// busca posicao da memoria apontada por pc, guarda em ir
+                showState();
 				// EXECUTA INSTRUCAO NO ir
 					switch (ir.opc) { // para cada opcode, sua execução
                         //0-endereco invalido | 1-instrucao invalida | 2-overflow | 3-final de programa
@@ -363,13 +373,17 @@ public class Sistema {
 			}
 
 			public void executa() {          
-				vm.cpu.setContext(0);          // monitor seta contexto - pc aponta para inicio do programa 
+				vm.cpu.setContext(0, new int[]{0, 0, 0, 0, 0, 0, 0,0,0,0}); // monitor seta contexto - pc aponta para inicio do programa
 				vm.cpu.run();                  //                         e cpu executa
 				tratamentoInterrupcao();               // note aqui que o monitor espera que o programa carregado acabe normalmente
 											   // nao ha protecoes...  o que poderia acontecer ?
 			}
 
-
+            public void executa(int _pc,int[] _reg) {
+                vm.cpu.setContext(_pc,_reg); // monitor seta contexto - pc aponta para inicio do programa
+                vm.cpu.run();                  //                         e cpu executa
+                tratamentoInterrupcao();               // note aqui que o monitor espera que o programa carregado acabe normalmente
+            }
 
 
 		}
@@ -388,6 +402,8 @@ public class Sistema {
 	public GerenciadorMemoria gerenciadorMemoria;
 	public GerenciadorProcesso gerenciadorProcesso;
 	public int sequencial = 0;
+	public int delta = 10;
+	public List<Integer> filaReady = new ArrayList<>();
 
 
     public Sistema(){   // a VM com tratamento de interrupções
@@ -441,6 +457,19 @@ public class Sistema {
         System.out.println("processo id = "+ id +" executando");
         monitor.executa();
         System.out.println("---------------------------------- programa executado\n");
+    }
+
+    public void executa2(){
+        while(!filaReady.isEmpty()){
+            tipoInterrupcao=-1;
+            GerenciadorProcesso.PCB processo = gerenciadorProcesso.findPCBById(filaReady.get(0));
+            vm.cpu.tabAtual = processo.paginasDoProcesso;
+            System.out.println("processo id = "+ processo.id +" executando");
+            filaReady.remove(0);
+            vm.cpu.processo = processo;
+            monitor.executa(processo.pc, processo.registadores);
+            System.out.println("---------------------------------- programa executado\n");
+        }
     }
 
     public void dump(int id){
@@ -628,7 +657,6 @@ public class Sistema {
             return (vetPaginas[endereco/tamFrame]*tamFrame)+(endereco%tamFrame);
             //T(A) = ( tabPaginas [(A div tamPag)] * tamFrame ) + ( A mod tamPag )
         }
-
     }
 
     public class GerenciadorProcesso{
@@ -636,23 +664,10 @@ public class Sistema {
         ArrayList<PCB> listaProcesso = new ArrayList<PCB>();
         int contadorId = 0;
 
-
         public GerenciadorProcesso(GerenciadorMemoria gm){
             this.gm = gm;
         }
-        /*
-Criar um processo, dado um programa passado como parâmetro.
-boolean criaProcesso( programa )
-verifica tamanho do programa
-pede alocação de memória ao Gerente de Memória
-se nao tem memória, retorna negativo
-Cria PCB
-Seta tabela de páginas no pcb
-Carrega o programa nos frames alocados
-Seta demais parâmetros do PCB (id, pc=0, etc)
-Coloca PCB na fila de prontos
-Retorna true
-         */
+
         public boolean criaProcesso(Word[] prog){
             ArrayList<Integer> framesAlocados = gm.aloca(prog.length,prog);
             if (!gm.valida){
@@ -661,9 +676,18 @@ Retorna true
             int tamProg = (prog.length/gm.tamFrame)+1;
             int[] pagProcesso = gm.retornaUltimos(tamProg);
             PCB processo = new PCB(contadorId,pagProcesso);
+            filaReady.add(contadorId);//FILA
             contadorId++;
             listaProcesso.add(processo);
             return true;
+        }
+
+        public void listaId(){
+            String lol = "";
+            for (int i=0;i<listaProcesso.size();i++){
+                lol = lol + listaProcesso.get(i).id + ", ";
+            }
+            System.out.println(lol);
         }
 
         public PCB findPCBById(int id){
@@ -688,10 +712,13 @@ Retorna true
         public class PCB{
             public int id;
             public int[] paginasDoProcesso;
+            public int[] registadores = new int[10];
+            public int pc = 0;
 
             public PCB(int id, int[] paginasDoProcesso){
                 this.id = id;
                 this.paginasDoProcesso = paginasDoProcesso;
+                Arrays.fill(registadores,0);
             }
 
             public String paginasString(){
@@ -702,12 +729,16 @@ Retorna true
                 return lol;
             }
 
-            public int tradutor(int endereco){
-                return gm.tradutor(endereco,paginasDoProcesso);
+            public void atualizaPc(int novo){
+                pc = novo;
             }
 
+            public void atualizaRegistradores(int[] novo){
+                registadores = novo;
+            }
         }
     }
+
 
 
     // -------------------  S I S T E M A - fim --------------------------------------------------------------
@@ -744,7 +775,7 @@ Retorna true
         //s.roda2(progs.testeTRAP_IN);
 
         //fase5 gerente de processo
-        s.cria(progs.PA);
+        /*s.cria(progs.PA);
         s.executa(0);
         s.cria(progs.PB);
         s.desaloca(0);
@@ -753,11 +784,74 @@ Retorna true
         s.executa(1);
         s.dump(2);
         s.dump(1);
-        s.dumpm(0,200);
+        s.dumpm(0,200);*/
 
+        //menu
+        Scanner in = new Scanner(System.in);
+        String menu = "MENU\n" +
+                "1 - cria processo\n" +
+                "2 - executa processo\n" +
+                "3 - dump processo\n" +
+                "4 - dump memoria x até y\n" +
+                "5 - desaloca processo\n" +
+                "6 - executa2";
 
-
+        String programas = "" +
+                "1 - PA (fibonacci)\n" +
+                "2 - PB (fatorial)\n" +
+                "3 - PC (bubble sort)\n" +
+                "4 - Fibonacci TRAP_IN\n" +
+                "5 - Fatorial TRAP_OUT";
+        while(true){
+            System.out.println(menu);
+            switch (in.nextInt()){
+                case 1:
+                    System.out.println("escolha um programa para criar");
+                    System.out.println(programas);
+                    switch (in.nextInt()){
+                        case 1:
+                            s.cria(progs.PA);
+                            break;
+                        case 2:
+                            s.cria(progs.PB);
+                            break;
+                        case 3:
+                            s.cria(progs.PC);
+                            break;
+                        case 4:
+                            s.cria(progs.fibonacciTRAP);
+                            break;
+                        case 5:
+                            s.cria(progs.fatorialTRAP);
+                            break;
+                    }
+                    break;
+                case 2:
+                    System.out.println("Processos já criados:");
+                    s.gerenciadorProcesso.listaId();
+                    s.executa(in.nextInt());
+                    break;
+                case 3:
+                    System.out.println("Processos já criados:");
+                    s.gerenciadorProcesso.listaId();
+                    s.dump(in.nextInt());
+                    break;
+                case 4:
+                    System.out.println("escreva dois valores para o inicio e o fim do dump");
+                    s.dumpm(in.nextInt(), in.nextInt());
+                    break;
+                case 5:
+                    System.out.println("Processos já criados:");
+                    s.gerenciadorProcesso.listaId();
+                    s.desaloca(in.nextInt());
+                    break;
+                case 6:
+                    s.executa2();
+                    break;
+            }
+        }
     }
+
     // -------------------------------------------------------------------------------------------------------
     // --------------- TUDO ABAIXO DE MAIN É AUXILIAR PARA FUNCIONAMENTO DO SISTEMA - nao faz parte 
 
@@ -1015,9 +1109,9 @@ Retorna true
 
        public Word[] fibonacciTRAP = new Word[] { // mesmo que prog exemplo, so que usa r0 no lugar de r8
                new Word(Opcode.LDI, 8, -1, 1),// leitura
-               new Word(Opcode.LDI, 9, -1, 100),//endereco a guardar
+               new Word(Opcode.LDI, 9, -1, 40),//endereco a guardar
                new Word(Opcode.TRAP, -1, -1, -1),
-               new Word(Opcode.LDD, 7, -1, 100),// numero do tamanho do fib
+               new Word(Opcode.LDD, 7, -1, 40),// numero do tamanho do fib
                new Word(Opcode.LDI, 3, -1, 0),
                new Word(Opcode.ADD, 3, 7, -1),
                new Word(Opcode.LDI, 4, -1, 36),//posicao para qual ira pular (stop) *
@@ -1074,8 +1168,8 @@ Retorna true
 
        public Word[] fatorialTRAP = new Word[] {
                new Word(Opcode.LDI, 0, -1, 7),// numero para colocar na memoria
-               new Word(Opcode.STD, 0, -1, 50),
-               new Word(Opcode.LDD, 0, -1, 50),
+               new Word(Opcode.STD, 0, -1, 19),
+               new Word(Opcode.LDD, 0, -1, 19),
                new Word(Opcode.LDI, 1, -1, -1),
                new Word(Opcode.LDI, 2, -1, 13),// SALVAR POS STOP
                new Word(Opcode.JMPIL, 2, 0, -1),// caso negativo pula pro STD
@@ -1091,7 +1185,8 @@ Retorna true
                new Word(Opcode.LDI, 9, -1, 18),//endereco com valor a escrever
                new Word(Opcode.TRAP, -1, -1, -1),
                new Word(Opcode.STOP, -1, -1, -1), // POS 17
-               new Word(Opcode.DATA, -1, -1, -1) //POS 18
+               new Word(Opcode.DATA, -1, -1, -1), //POS 18
+               new Word(Opcode.DATA, -1, -1, -1) //POS 19
        };
 
    }
