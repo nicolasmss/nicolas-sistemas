@@ -85,9 +85,7 @@ public class Sistema {
 				// FETCH
                 if (cont==delta){
                     cont=0;
-                    processo.atualizaPc(pc);
-                    processo.atualizaRegistradores(reg);
-                    filaReady.add(processo.id);
+                    escalonamento(processo,pc,reg);
                     break;
                 }
                 cont++;
@@ -550,6 +548,13 @@ public class Sistema {
             return 3;// 3 = final de programa
         }
         return -1;
+    }
+
+    public void escalonamento(GerenciadorProcesso.PCB processo,
+                             int pc, int[] reg){
+        processo.atualizaPc(pc);
+        processo.atualizaRegistradores(reg);
+        filaReady.add(processo.id);
     }
 
     public void funcaoTRAP(){
