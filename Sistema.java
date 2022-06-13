@@ -315,6 +315,7 @@ public class Sistema {
 				if (ir.opc==Opcode.STOP) {
 					tipoInterrupcao = 3;
                     tratamentoInterrupcao();
+                    desaloca(vm.cpu.processo.id);//desaloca no fim do processo
 					cont = 0;
 					teste3.release();
 
@@ -491,11 +492,6 @@ public class Sistema {
         System.out.println("---------------------------------- programa executado\n");
     }
 
-    Semaphore teste = new Semaphore(0);//testando inutil
-    Semaphore teste2 = new Semaphore(0);//testando cpu
-    Semaphore teste3 = new Semaphore(0);//testando escalonador
-    Semaphore semaforoTrap = new Semaphore(0);//testando
-    Semaphore semanforoMenu = new Semaphore(1);//testando
     public void executa2(){
         while(!escalonador.filaReady.isEmpty()){
             tipoInterrupcao=-1;
@@ -593,7 +589,6 @@ public class Sistema {
     public int verificaInterrupcaoFinal(Opcode isStop){
         if(isStop.equals(Opcode.STOP)){
             tipoInterrupcao = 3;
-            desaloca(vm.cpu.processo.id);//desaloca no fim do processo
             return 3;// 3 = final de programa
         }
         return -1;
@@ -797,6 +792,11 @@ public class Sistema {
         }
     }
 
+    Semaphore teste = new Semaphore(0);//testando inutil
+    Semaphore teste2 = new Semaphore(0);//testando cpu
+    Semaphore teste3 = new Semaphore(0);//testando escalonador
+    Semaphore semaforoTrap = new Semaphore(0);//testando
+    Semaphore semanforoMenu = new Semaphore(1);//testando
     public class Escalonador extends Thread{
         public int delta = 10;
         public List<Integer> filaReady = new ArrayList<>();
@@ -846,6 +846,7 @@ public class Sistema {
         }
     }
 
+    public boolean esperaTrap = false;
     public class Console extends Thread{
 
         public void run(){
@@ -853,11 +854,12 @@ public class Sistema {
                 try {
                     semaforoTrap.acquire();
                 } catch (InterruptedException e) {}
+                esperaTrap=true;
                 try {
                     semanforoMenu.acquire();
                 } catch (InterruptedException e) {}
 
-
+                esperaTrap=false;
                 GerenciadorProcesso.PCB processo = gerenciadorProcesso
                         .findPCBById(escalonador.bloqueados.get(0));
                 funcaoTRAP(processo);
@@ -1004,21 +1006,20 @@ public class Sistema {
     boolean auto = true;
     public void menu2(){
         Scanner in = new Scanner(System.in);
-        boolean sair = true;
         String menu = "MENU\n" +
                 "1 - cria processo\n" +
                 "2 - parar de executar automaticamente ao criar processos\n" +
                 "3 - começar a executar manualmente\n" +
                 "está automatico = "+auto+"\n" +
-                "0 - sair";
+                "0 - pular";
 
-        String programas = "Programas disponiveis:\n" +
+       String programas = "Programas disponiveis:\n" +
                 "1 - PA (fibonacci)\n" +
                 "2 - PB (fatorial)\n" +
                 "3 - PC (bubble sort)\n" +
                 "4 - Fibonacci TRAP_IN\n" +
                 "5 - Fatorial TRAP_OUT";
-        while(sair){
+        while(true){
             try {
                 semanforoMenu.acquire();
             } catch (InterruptedException e) {}
@@ -1058,12 +1059,10 @@ public class Sistema {
                     teste3.release();
                     break;
                 case 0:
-                    //sair = false;
                     break;
             }
             semanforoMenu.release();
-            System.out.println("\t\t\t\t\t");
-            System.out.println("\t\t\t\t\t");
+            while(esperaTrap){}//roda apenas um menu se tiver alguma trap pedindo console
         }
     }
 
