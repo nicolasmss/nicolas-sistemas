@@ -314,9 +314,14 @@ public class Sistema {
 				// VERIFICA INTERRUPÇÃO !!! - TERCEIRA FASE DO CICLO DE INSTRUÇÕES
 				if (ir.opc==Opcode.STOP) {
 					tipoInterrupcao = 3;
-                    tratamentoInterrupcao();
-                    desaloca(vm.cpu.processo.id);//desaloca no fim do processo
+					processo.tipoInterrupcao = tipoInterrupcao;
+					tipoInterrupcao= -1;
+                    escalonador.atualizaProcesso(processo,pc,reg,processo.tipoInterrupcao);
+                    chamadas.filaDesaloca.add(processo.id);
+                    //tratamentoInterrupcao();
+                    //desaloca(vm.cpu.processo.id);//desaloca no fim do processo
 					cont = 0;
+                    semChamada.release();
 					teste3.release();
 
 					//break; // break sai do loop da cpu // nunca mais sai
@@ -325,17 +330,24 @@ public class Sistema {
 				//     desviar para rotina java que trata int
 
 				}else if(tipoInterrupcao==4){
-                    escalonador.atualizaProcesso(processo,pc,reg);
+                    processo.tipoInterrupcao = tipoInterrupcao;
+                    tipoInterrupcao= -1;
+                    escalonador.atualizaProcesso(processo,pc,reg,processo.tipoInterrupcao);
                     escalonador.bloqueados.add(processo.id);
-				    tratamentoInterrupcao();
+				    //tratamentoInterrupcao();
                     cont = 0;
                     teste3.release();
                     semaforoTrap.release();
 					//break;
 				}else if(tipoInterrupcao>=0){
-                    tratamentoInterrupcao();
+                    processo.tipoInterrupcao = tipoInterrupcao;
+                    tipoInterrupcao= -1;
+                    escalonador.atualizaProcesso(processo,pc,reg,processo.tipoInterrupcao);
+                    chamadas.filaDesaloca.add(processo.id);
+                    //tratamentoInterrupcao();
                     cont = 0;
                     teste3.release();
+                    semChamada.release();
                     //break;
                 }
 			}
@@ -393,18 +405,6 @@ public class Sistema {
 					System.out.print(i); System.out.print(":  ");  dump(m[i]);
 				}
 			}
-			public void carga(Word[] p, Word[] m) {    // significa ler "p" de memoria secundaria e colocar na principal "m"
-				for (int i = 0; i < p.length; i++) {
-					m[i].opc = p[i].opc;     m[i].r1 = p[i].r1;     m[i].r2 = p[i].r2;     m[i].p = p[i].p;
-				}
-			}
-
-			public void executa() {      // não usado mais
-				vm.cpu.setContext(0, new int[]{0, 0, 0, 0, 0, 0, 0,0,0,0}); // monitor seta contexto - pc aponta para inicio do programa
-				vm.cpu.run();                  //                         e cpu executa
-				//tratamentoInterrupcao();               // note aqui que o monitor espera que o programa carregado acabe normalmente
-											   // nao ha protecoes...  o que poderia acontecer ?
-			}
 
             public void executa(int _pc,int[] _reg) {
                 vm.cpu.setContext(_pc,_reg); // monitor seta contexto - pc aponta para inicio do programa
@@ -431,6 +431,7 @@ public class Sistema {
 	public GerenciadorProcesso gerenciadorProcesso;
 	public Escalonador escalonador;
 	public Console console;
+	public Chamadas chamadas;
 	public int sequencial = 0;
 
 
@@ -442,32 +443,8 @@ public class Sistema {
 		 gerenciadorProcesso = new GerenciadorProcesso(gerenciadorMemoria);
 		 escalonador = new Escalonador();
 		 console = new Console();
+		 chamadas =new Chamadas();
 	}
-
-	public void roda(Word[] programa){
-			monitor.carga(programa, vm.m);
-			System.out.println("---------------------------------- programa carregado ");
-			monitor.dump(vm.m, 0, programa.length);
-			monitor.executa();        
-			System.out.println("---------------------------------- após execucao ");
-			monitor.dump(vm.m, 0, programa.length);
-    }
-
-    public void roda2(Word[] programa){
-        if (!gerenciadorProcesso.criaProcesso(programa)){
-            System.out.println("erro ao criar processo");
-        }else{
-            resetaReg();
-            tipoInterrupcao=-1;
-            System.out.println("---------------------------------- programa carregado ");
-            monitor.dump(vm.m, 0, 200);
-            vm.cpu.tabAtual = gerenciadorProcesso.findPCBById(sequencial).paginasDoProcesso;
-            sequencial++;
-            monitor.executa();
-            System.out.println("---------------------------------- após execucao ");
-            monitor.dump(vm.m, 0, 200);
-        }
-    }
 
     public void cria(Word[] programa){
         if (!gerenciadorProcesso.criaProcesso(programa)){
@@ -480,33 +457,6 @@ public class Sistema {
         System.out.println("paginas alocadas pelo programa: "+pcb.paginasString()+"\n");
         if (auto){
             teste3.release(); //automatizar ao criar
-        }
-    }
-
-    public void executa(int id){
-        resetaReg();
-        tipoInterrupcao=-1;
-        vm.cpu.tabAtual = gerenciadorProcesso.findPCBById(id).paginasDoProcesso;
-        System.out.println("processo id = "+ id +" executando");
-        monitor.executa();
-        System.out.println("---------------------------------- programa executado\n");
-    }
-
-    public void executa2(){
-        while(!escalonador.filaReady.isEmpty()){
-            tipoInterrupcao=-1;
-            GerenciadorProcesso.PCB processo = gerenciadorProcesso
-                    .findPCBById(escalonador.filaReady.get(0));//running
-            vm.cpu.tabAtual = processo.paginasDoProcesso;
-            System.out.println("processo id = "+ processo.id +" executando");
-            escalonador.filaReady.remove(0);
-            vm.cpu.processo = processo;
-            monitor.executa(processo.pc, processo.registadores);
-            System.out.println("---------------------------------- programa executado\n");
-
-            try {
-                teste.acquire();
-            } catch (InterruptedException e) {}
         }
     }
 
@@ -541,8 +491,8 @@ public class Sistema {
         Arrays.fill(vm.cpu.reg, 0);
     }
 
-    public void tratamentoInterrupcao()	{
-        switch (tipoInterrupcao){
+    public void tratamentoInterrupcao(int interrupcao)	{
+        switch (interrupcao){
             case 0:
                 System.out.println("Endereco invalido");
                 break;
@@ -767,6 +717,7 @@ public class Sistema {
             public int[] paginasDoProcesso;
             public int[] registadores = new int[10];
             public int pc = 0;
+            public int tipoInterrupcao = -1;
 
             public PCB(int id, int[] paginasDoProcesso){
                 this.id = id;
@@ -782,13 +733,13 @@ public class Sistema {
                 return lol;
             }
 
-            public void atualizaPc(int novo){
-                pc = novo;
-            }
+            public void atualizaPc(int novo){pc = novo;}
 
             public void atualizaRegistradores(int[] novo){
                 registadores = novo;
             }
+
+            public void atualizaTipoInterrupcao(int novo){tipoInterrupcao = novo;}
         }
     }
 
@@ -797,6 +748,7 @@ public class Sistema {
     Semaphore teste3 = new Semaphore(0);//testando escalonador
     Semaphore semaforoTrap = new Semaphore(0);//testando
     Semaphore semanforoMenu = new Semaphore(1);//testando
+    Semaphore semanFila = new Semaphore(1);//testando
     public class Escalonador extends Thread{
         public int delta = 10;
         public List<Integer> filaReady = new ArrayList<>();
@@ -807,14 +759,20 @@ public class Sistema {
                                   int pc, int[] reg){
             processo.atualizaPc(pc);
             processo.atualizaRegistradores(reg);
+            try {
+                semanFila.acquire();
+            } catch (InterruptedException e) {}
             filaReady.add(processo.id);
+            semanFila.release();
             //teste.release();
         }
 
         public void atualizaProcesso(GerenciadorProcesso.PCB processo,
-                             int pc, int[] reg){
+                             int pc, int[] reg, int interrupcao){
             processo.atualizaPc(pc);
             processo.atualizaRegistradores(reg);
+            processo.atualizaTipoInterrupcao(interrupcao);
+
         }
 
         boolean listavazia = false;
@@ -854,21 +812,61 @@ public class Sistema {
                 try {
                     semaforoTrap.acquire();
                 } catch (InterruptedException e) {}
-                esperaTrap=true;
-                try {
-                    semanforoMenu.acquire();
-                } catch (InterruptedException e) {}
 
-                esperaTrap=false;
                 GerenciadorProcesso.PCB processo = gerenciadorProcesso
                         .findPCBById(escalonador.bloqueados.get(0));
-                funcaoTRAP(processo);
-                escalonador.filaReady.add(processo.id);
-                escalonador.bloqueados.remove(0);
-                semanforoMenu.release();
-                if (escalonador.listavazia){
-                    teste3.release();
+
+                tratamentoInterrupcao(processo.tipoInterrupcao);
+
+                if (processo.tipoInterrupcao==4){
+                    esperaTrap=true;
+                    try {
+                        semanforoMenu.acquire();
+                    } catch (InterruptedException e) {}
+
+                    esperaTrap=false;
+                    funcaoTRAP(processo);
+                    processo.tipoInterrupcao =-1;
+                    try {
+                        semanFila.acquire();
+                    } catch (InterruptedException e) {}
+                    escalonador.filaReady.add(processo.id);
+                    semanFila.release();
+                    escalonador.bloqueados.remove(0);
+                    semanforoMenu.release();
+                    if (escalonador.listavazia){
+                        teste3.release();
+                    }
                 }
+            }
+        }
+    }
+
+    Semaphore semChamada = new Semaphore(0);
+
+    public class Chamadas extends Thread{
+        List<Integer> filaDesaloca = new ArrayList<Integer>();
+
+
+        public void run() {
+            while(true) {
+                try {
+                    semChamada.acquire();
+                } catch (InterruptedException e) {}
+                GerenciadorProcesso.PCB processo = gerenciadorProcesso
+                        .findPCBById(filaDesaloca.get(0));
+
+                tratamentoInterrupcao(processo.tipoInterrupcao);
+                if (processo.tipoInterrupcao==3) {
+                    processo.tipoInterrupcao = -1;
+                    try {
+                        semanFila.acquire();
+                    } catch (InterruptedException e) {}
+                    desaloca(processo.id);
+                    semanFila.release();
+                    filaDesaloca.remove(0);
+                }
+
             }
         }
     }
@@ -882,125 +880,12 @@ public class Sistema {
     // ------------------- instancia e testa sistema
 	public static void main(String args[]) {
 		Sistema s = new Sistema();
-		/*
-	    //s.roda(progs.fibonacci10);           // "progs" significa acesso/referencia ao programa em memoria secundaria
-		//s.roda(progs.progMinimo);
-		//s.roda(progs.fatorial);
-
-        //fase1
-        //s.roda(progs.PA);
-		//s.roda(progs.PB);
-        //s.roda(progs.PC);
-
-        //fase2 testes interrupção
-        //s.roda(progs.interrupcaoEndereco);
-        //s.roda(progs.interrupcaoInstrucao);
-        //s.roda(progs.interrupcaoOverflow);
-
-        //fase3 teste TRAP
-        //s.roda(progs.testeTRAP_IN);
-        //s.roda(progs.testeTRAP_OUT);
-        //s.roda(progs.fibonacciTRAP);
-        //s.roda(progs.fatorialTRAP);
-
-        //fase4 gerente de memoria
-        //s.roda2(progs.PA);
-        //s.roda2(progs.PB);
-        //s.roda2(progs.PC);
-        //s.roda2(progs.testeTRAP_IN);
-
-        //fase5 gerente de processo
-        /*s.cria(progs.PA);
-        s.executa(0);
-        s.cria(progs.PB);
-        s.desaloca(0);
-        s.cria(progs.PC);
-        s.executa(2);
-        s.executa(1);
-        s.dump(2);
-        s.dump(1);
-        s.dumpm(0,200);*/
-
         s.vm.cpu.start();
         s.escalonador.start();
         s.console.start();
+        s.chamadas.start();
         s.menu2();
 
-    }
-
-    public void menu(){
-        Scanner in = new Scanner(System.in);
-        boolean sair = true;
-        String menu = "MENU\n" +
-                "1 - cria processo\n" +
-                "2 - executa processo\n" +
-                "3 - dump processo\n" +
-                "4 - dump memoria x até y\n" +
-                "5 - desaloca processo\n" +
-                "6 - executa2\n" +
-                "7 - começa a executar\n" +
-                "0 - sair";
-
-        String programas = "" +
-                "1 - PA (fibonacci)\n" +
-                "2 - PB (fatorial)\n" +
-                "3 - PC (bubble sort)\n" +
-                "4 - Fibonacci TRAP_IN\n" +
-                "5 - Fatorial TRAP_OUT";
-        while(sair){
-            System.out.println(menu);
-            switch (in.nextInt()){
-                case 1:
-                    System.out.println("escolha um programa para criar");
-                    System.out.println(programas);
-                    switch (in.nextInt()){
-                        case 1:
-                            cria(progs.PA);
-                            break;
-                        case 2:
-                            cria(progs.PB);
-                            break;
-                        case 3:
-                            cria(progs.PC);
-                            break;
-                        case 4:
-                            cria(progs.fibonacciTRAP);
-                            break;
-                        case 5:
-                            cria(progs.fatorialTRAP);
-                            break;
-                    }
-                    break;
-                case 2:
-                    System.out.println("Processos já criados:");
-                    gerenciadorProcesso.listaId();
-                    executa(in.nextInt());
-                    break;
-                case 3:
-                    System.out.println("Processos já criados:");
-                    gerenciadorProcesso.listaId();
-                    dump(in.nextInt());
-                    break;
-                case 4:
-                    System.out.println("escreva dois valores para o inicio e o fim do dump");
-                    dumpm(in.nextInt(), in.nextInt());
-                    break;
-                case 5:
-                    System.out.println("Processos já criados:");
-                    gerenciadorProcesso.listaId();
-                    desaloca(in.nextInt());
-                    break;
-                case 6:
-                    executa2();
-                    break;
-                case 7:
-                    teste3.release();
-                    break;
-                case 0:
-                    sair = false;
-                    break;
-            }
-        }
     }
 
     boolean auto = true;
