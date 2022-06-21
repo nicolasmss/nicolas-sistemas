@@ -322,6 +322,7 @@ public class Sistema {
                     //desaloca(vm.cpu.processo.id);//desaloca no fim do processo
 					cont = 0;
                     semChamada.release();
+                    ehDesa.release();
 					teste3.release();
 
 					//break; // break sai do loop da cpu // nunca mais sai
@@ -348,6 +349,7 @@ public class Sistema {
                     cont = 0;
                     teste3.release();
                     semChamada.release();
+                    ehDesa.release();
                     //break;
                 }
 			}
@@ -843,9 +845,13 @@ public class Sistema {
     }
 
     Semaphore semChamada = new Semaphore(0);
+    Semaphore ehDesa = new Semaphore(0);
+    Semaphore ehCria = new Semaphore(0);
+
 
     public class Chamadas extends Thread{
         List<Integer> filaDesaloca = new ArrayList<Integer>();
+        List<Word[]> filaCria = new ArrayList<Word[]>();
 
 
         public void run() {
@@ -853,20 +859,27 @@ public class Sistema {
                 try {
                     semChamada.acquire();
                 } catch (InterruptedException e) {}
-                GerenciadorProcesso.PCB processo = gerenciadorProcesso
-                        .findPCBById(filaDesaloca.get(0));
 
-                tratamentoInterrupcao(processo.tipoInterrupcao);
-                if (processo.tipoInterrupcao==3) {
-                    processo.tipoInterrupcao = -1;
-                    try {
-                        semanFila.acquire();
-                    } catch (InterruptedException e) {}
-                    desaloca(processo.id);
-                    semanFila.release();
-                    filaDesaloca.remove(0);
+                if (ehCria.tryAcquire()){
+                    cria(filaCria.get(0));
+                    filaCria.remove(0);
                 }
 
+                if (ehDesa.tryAcquire()){
+                    GerenciadorProcesso.PCB processo = gerenciadorProcesso
+                            .findPCBById(filaDesaloca.get(0));
+
+                    tratamentoInterrupcao(processo.tipoInterrupcao);
+                    if (processo.tipoInterrupcao==3) {
+                        processo.tipoInterrupcao = -1;
+                        try {
+                            semanFila.acquire();
+                        } catch (InterruptedException e) {}
+                        desaloca(processo.id);
+                        semanFila.release();
+                        filaDesaloca.remove(0);
+                    }
+                }
             }
         }
     }
@@ -915,19 +928,34 @@ public class Sistema {
                     System.out.println(programas);
                     switch (in.nextInt()){
                         case 1:
-                            cria(progs.PA);
+                            //cria(progs.PA);
+                            chamadas.filaCria.add(progs.PA);
+                            ehCria.release();
+                            semChamada.release();
                             break;
                         case 2:
-                            cria(progs.PB);
+                            //cria(progs.PB);
+                            chamadas.filaCria.add(progs.PB);
+                            ehCria.release();
+                            semChamada.release();
                             break;
                         case 3:
-                            cria(progs.PC);
+                            //cria(progs.PC);
+                            chamadas.filaCria.add(progs.PC);
+                            ehCria.release();
+                            semChamada.release();
                             break;
                         case 4:
-                            cria(progs.fibonacciTRAP);
+                            //cria(progs.fibonacciTRAP);
+                            chamadas.filaCria.add(progs.fibonacciTRAP);
+                            ehCria.release();
+                            semChamada.release();
                             break;
                         case 5:
-                            cria(progs.fatorialTRAP);
+                            //cria(progs.fatorialTRAP);
+                            chamadas.filaCria.add(progs.fatorialTRAP);
+                            ehCria.release();
+                            semChamada.release();
                             break;
                     }
                     break;
